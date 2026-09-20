@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Workout Tracker</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root {
     --bg: #0f0f0f;
@@ -1190,8 +1191,24 @@
     <div class="backup-section">
       <h3>☁ Google Drive sync</h3>
       <p>Sync your workout data to Google Drive so it's available on any device — desktop, iPhone, anywhere. Each device reads from and writes to the same file in your Drive.</p>
-      <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px;">
-        <div style="font-size:13px;color:var(--muted);">Paste your Google Drive API key and the file ID of your sync file below. The app will read on load and write on every save.</div>
+
+      <div style="font-size:11px;color:var(--muted);line-height:1.7;padding:10px 12px;background:var(--surface2);border-radius:6px;margin-bottom:14px;">
+        <strong style="color:var(--text);">One-time setup (per Google account):</strong>
+        <ol style="margin:6px 0 0 18px;padding:0;">
+          <li>Go to <strong>console.cloud.google.com</strong> and create a project (or use an existing one).</li>
+          <li>Under <strong>APIs &amp; Services → Library</strong>, search for and enable the <strong>Google Drive API</strong>.</li>
+          <li>Under <strong>APIs &amp; Services → OAuth consent screen</strong>, set User type to <strong>External</strong>, fill in the required fields, and add your own Google email under <strong>Test users</strong>.</li>
+          <li>Under <strong>APIs &amp; Services → Credentials</strong>, click <strong>Create Credentials → OAuth client ID</strong>, choose <strong>Web application</strong>.</li>
+          <li>Under <strong>Authorized JavaScript origins</strong>, add the exact URL this app is hosted at (e.g. <code>https://yourname.github.io</code>) — a <code>file://</code> address won't work here, Google requires a real web origin.</li>
+          <li>Click Create, then copy the <strong>Client ID</strong> (ends in <code>.apps.googleusercontent.com</code>) and paste it below.</li>
+        </ol>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;">Google Cloud OAuth Client ID</div>
+          <input type="text" id="gcp-client-id" class="backup-textarea" style="min-height:unset;resize:none;width:100%;padding:8px 12px;font-size:13px;font-family:'Barlow',monospace;" placeholder="xxxxxxxx.apps.googleusercontent.com" oninput="saveGcpClientId(this.value)">
+        </div>
         <div>
           <div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;">Sync file ID <span style="font-weight:400;text-transform:none;font-size:11px;">(from Drive URL or created automatically)</span></div>
           <input type="text" id="sync-file-id" class="backup-textarea" style="min-height:unset;resize:none;width:100%;padding:8px 12px;font-size:13px;font-family:'Barlow',monospace;" placeholder="Leave blank to create a new sync file on first save">
@@ -1200,10 +1217,11 @@
           <button class="btn-primary" onclick="initDriveSync()">Connect &amp; sync now</button>
           <button class="btn-secondary" onclick="pushToDrive()">⬆ Push local → Drive</button>
           <button class="btn-secondary" onclick="pullFromDrive()">⬇ Pull Drive → local</button>
+          <button class="btn-secondary" onclick="resetDriveAuth()" style="font-size:12px;">Switch Google account</button>
         </div>
         <div id="drive-sync-status" class="restore-status" style="margin-top:4px;"></div>
         <div style="font-size:11px;color:var(--muted);line-height:1.7;padding:10px 12px;background:var(--surface2);border-radius:6px;">
-          <strong style="color:var(--text);">How it works:</strong> The first time you connect, a file called <code>workoutlog-sync.json</code> is created in your Drive. Copy the file ID shown and paste it into this box on your other devices. From then on, hitting Sync (or saving a workout) automatically pushes your data up. Opening the app on another device pulls the latest data down.
+          <strong style="color:var(--text);">How it works:</strong> The first time you connect, a file called <code>workoutlog-sync.json</code> is created in your Drive and Google will ask you to sign in and approve access (only to files this app creates — nothing else in your Drive). Copy the <strong>Sync file ID</strong> shown afterward and paste it into this same box on your other devices, along with the same Client ID. From then on, saving a workout automatically pushes your data up, and opening the app pulls the latest down. Syncing covers everything — workouts, program customizations, exercise edits, and swim history.
         </div>
       </div>
     </div>
@@ -1227,7 +1245,7 @@
 
     <div class="backup-section">
       <h3>Backup &amp; restore</h3>
-      <p>Export your data to keep a safe copy, or restore from a previous backup.</p>
+      <p>Export everything — workouts, program customizations, exercise edits, and swim history — to keep a safe copy, or restore from a previous backup.</p>
       <div class="backup-stats" id="backup-stats"></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
         <button class="btn-primary" onclick="downloadBackup()">&#11015; Download backup</button>
@@ -1553,6 +1571,7 @@ function initRunnerProfile() {
 
 function saveProgConfig(cfg) {
   localStorage.setItem('liftlog_prog_config', JSON.stringify(cfg));
+  autoSyncAfterSave();
 }
 
 function getTotalRunWeeks() {
@@ -1960,6 +1979,14 @@ function initSettingsPage() {
   if (el) el.value = stored;
   const syncEl = document.getElementById('sync-file-id');
   if (syncEl) syncEl.value = getDriveSyncFileId();
+  const clientIdEl = document.getElementById('gcp-client-id');
+  if (clientIdEl) clientIdEl.value = localStorage.getItem('liftlog_gcp_client_id') || '';
+}
+
+function saveGcpClientId(val) {
+  localStorage.setItem('liftlog_gcp_client_id', (val || '').trim());
+  // A different client means any cached token/client is no longer valid
+  resetDriveAuth();
 }
 
 // ---- EXERCISE LIBRARY ----
@@ -2055,6 +2082,7 @@ function getExerciseLibrary() {
 
 function saveCustomExercises(arr) {
   localStorage.setItem('liftlog_custom_exercises', JSON.stringify(arr));
+  autoSyncAfterSave();
 }
 
 // ---- CUSTOM WORKOUT LISTS ----
@@ -2091,6 +2119,7 @@ function getCustomWorkouts() {
 
 function saveCustomWorkouts(obj) {
   localStorage.setItem('liftlog_custom_workouts', JSON.stringify(obj));
+  autoSyncAfterSave();
 }
 
 // ---- EXERCISE OVERRIDES (user edits to preprogrammed/library exercise numbers) ----
@@ -2101,6 +2130,7 @@ function getExerciseOverrides() {
 
 function saveExerciseOverrides(obj) {
   localStorage.setItem('liftlog_exercise_overrides', JSON.stringify(obj));
+  autoSyncAfterSave();
 }
 
 function getExerciseData(name) {
@@ -2539,6 +2569,7 @@ function saveDailyAddons() {
     ptExercises
   };
   localStorage.setItem('liftlog_daily_addons', JSON.stringify(addons));
+  autoSyncAfterSave();
   renderDailyAddons();
   const cs = document.getElementById('workout-core-status');
   if (cs) { cs.textContent = '✓ Core config saved.'; cs.className = 'restore-status ok'; }
@@ -3836,6 +3867,7 @@ function saveBackfillEntry() {
   localStorage.setItem('liftlog_workouts', JSON.stringify(workouts));
   updateSwimGoalBar();
   renderHistory();
+  autoSyncAfterSave();
   showToast(backfillEntryIndex !== null ? 'Workout updated!' : 'Workout logged!');
   closeBackfillEditor();
 }
@@ -3848,6 +3880,7 @@ function deleteBackfillEntry() {
   localStorage.setItem('liftlog_workouts', JSON.stringify(workouts));
   updateSwimGoalBar();
   renderHistory();
+  autoSyncAfterSave();
   showToast('Workout deleted');
   closeBackfillEditor();
 }
@@ -4520,9 +4553,10 @@ function renderSchedule() {
 function getBackupPayload() {
   return {
     app: 'WorkoutTracker',
-    version: 1,
+    version: 2,
     exported: new Date().toISOString(),
-    workouts: workouts
+    data: getFullDataPayload(),
+    workouts: workouts // kept for anything that only understands the old format
   };
 }
 
@@ -4600,22 +4634,39 @@ function restoreBackup() {
     setRestoreStatus('Invalid JSON — make sure you pasted the complete backup file without any edits.', 'err');
     return;
   }
-  // Accept either a raw array (old format) or the wrapped object
+
+  let fullData = null;
   let data;
   if (Array.isArray(parsed)) {
+    // Oldest format: a bare array of workouts
     data = parsed;
-  } else if (parsed.app === 'WorkoutTracker' || parsed.app === 'WorkoutLog' && Array.isArray(parsed.workouts)) {
+  } else if (parsed.data && typeof parsed.data === 'object') {
+    // Current format: full app data (workouts, program customizations, swim history, settings)
+    fullData = parsed.data;
+    data = fullData.liftlog_workouts ? JSON.parse(fullData.liftlog_workouts) : (parsed.workouts || []);
+  } else if ((parsed.app === 'WorkoutTracker' || parsed.app === 'WorkoutLog') && Array.isArray(parsed.workouts)) {
     data = parsed.workouts;
   } else {
     setRestoreStatus('Unrecognized backup format. Make sure this file came from Workout Tracker.', 'err');
     return;
   }
-  if (!confirm(`This will replace your current ${workouts.length} workout(s) with ${data.length} workout(s) from the backup. Continue?`)) return;
-  workouts = data;
-  localStorage.setItem('liftlog_workouts', JSON.stringify(workouts));
+
+  const scopeMsg = fullData
+    ? `all app data (${data.length} workout(s), program customizations, and swim history)`
+    : `${data.length} workout(s)`;
+  if (!confirm(`This will replace your current data with ${scopeMsg} from the backup. Continue?`)) return;
+
+  if (fullData) {
+    applyFullDataPayload(fullData);
+  } else {
+    workouts = data;
+    localStorage.setItem('liftlog_workouts', JSON.stringify(workouts));
+  }
   document.getElementById('restore-input').value = '';
   renderBackupStats();
-  setRestoreStatus(`Restored ${data.length} workout(s) successfully.`, 'ok');
+  initWorkoutProgs();
+  renderWorkoutLists();
+  setRestoreStatus(`Restored ${data.length} workout(s) successfully${fullData ? ' (full backup)' : ''}.`, 'ok');
   showToast('Restored!');
 }
 
@@ -4634,7 +4685,8 @@ function clearAllData() {
 }
 
 // ---- GOOGLE DRIVE SYNC ----
-// Uses the Drive REST API v3 with an API key for read and OAuth token for write.
+// Uses Google Identity Services (GIS) for OAuth and the Drive REST API v3 to read/write a
+// single JSON file (workoutlog-sync.json) that this app creates in the user's Drive.
 // Data file: workoutlog-sync.json in user's Drive root.
 
 const DRIVE_SYNC_KEY = 'liftlog_drive_file_id';
@@ -4648,25 +4700,74 @@ function saveDriveSyncFileId(id) {
   localStorage.setItem(DRIVE_SYNC_KEY, id);
 }
 
+// Every localStorage key that represents real user data — kept in one place so backup,
+// restore, and Drive sync all cover exactly the same ground.
+const SYNCED_DATA_KEYS = [
+  'liftlog_workouts',
+  'liftlog_custom_workouts',
+  'liftlog_exercise_overrides',
+  'liftlog_custom_exercises',
+  'liftlog_daily_addons',
+  'liftlog_prog_config',
+  'liftlog_start_date',
+  'swim_start_date',
+];
+
+// SW_KEY / SWIM_CFG_KEY are declared further down the file as consts; referencing them here
+// is safe because this function only runs after the whole script has loaded once.
+function getAllSyncedKeys() {
+  const keys = SYNCED_DATA_KEYS.slice();
+  if (typeof SW_KEY !== 'undefined') keys.push(SW_KEY);
+  if (typeof SWIM_CFG_KEY !== 'undefined') keys.push(SWIM_CFG_KEY);
+  return keys;
+}
+
+// Captures every synced key as its raw localStorage string — avoids re-parsing each key
+// differently and just round-trips exactly what's stored.
+function getFullDataPayload() {
+  const data = {};
+  getAllSyncedKeys().forEach(key => {
+    const raw = localStorage.getItem(key);
+    if (raw !== null) data[key] = raw;
+  });
+  return data;
+}
+
+function applyFullDataPayload(data) {
+  getAllSyncedKeys().forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(data, key) && data[key] !== undefined && data[key] !== null) {
+      localStorage.setItem(key, data[key]);
+    }
+  });
+  // Refresh in-memory state that mirrors localStorage
+  workouts = JSON.parse(localStorage.getItem('liftlog_workouts') || '[]');
+}
+
 function getSyncPayload() {
   return JSON.stringify({
+    app: 'WorkoutTracker',
     version: 2,
     exported: new Date().toISOString(),
-    workouts: JSON.parse(localStorage.getItem('liftlog_workouts') || '[]'),
-    progConfig: JSON.parse(localStorage.getItem('liftlog_prog_config') || 'null'),
-    startDate: localStorage.getItem('liftlog_start_date') || '',
-    dailyAddons: JSON.parse(localStorage.getItem('liftlog_daily_addons') || 'null'),
+    data: getFullDataPayload()
   });
 }
 
 function applySyncPayload(raw) {
-  let data;
-  try { data = JSON.parse(raw); } catch(e) { throw new Error('Invalid sync file format'); }
-  if (data.workouts) localStorage.setItem('liftlog_workouts', JSON.stringify(data.workouts));
-  if (data.progConfig) localStorage.setItem('liftlog_prog_config', JSON.stringify(data.progConfig));
-  if (data.startDate) localStorage.setItem('liftlog_start_date', data.startDate);
-  if (data.dailyAddons) localStorage.setItem('liftlog_daily_addons', JSON.stringify(data.dailyAddons));
-  workouts = JSON.parse(localStorage.getItem('liftlog_workouts') || '[]');
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch(e) { throw new Error('Invalid sync file format'); }
+  if (parsed && parsed.data && typeof parsed.data === 'object') {
+    applyFullDataPayload(parsed.data);
+  } else if (parsed && typeof parsed === 'object') {
+    // Tolerate an older/partial sync file shape
+    const legacy = {};
+    if (parsed.workouts) legacy.liftlog_workouts = JSON.stringify(parsed.workouts);
+    if (parsed.progConfig) legacy.liftlog_prog_config = JSON.stringify(parsed.progConfig);
+    if (parsed.startDate) legacy.liftlog_start_date = parsed.startDate;
+    if (parsed.dailyAddons) legacy.liftlog_daily_addons = JSON.stringify(parsed.dailyAddons);
+    applyFullDataPayload(legacy);
+  } else {
+    throw new Error('Invalid sync file format');
+  }
 }
 
 function setSyncStatus(msg, type) {
@@ -4682,22 +4783,74 @@ function setSyncStatus(msg, type) {
   }
 }
 
-async function getAccessToken() {
-  // Use gapi / Google Identity Services if loaded, otherwise prompt
-  if (window.google?.accounts?.oauth2) {
-    return new Promise((resolve, reject) => {
-      const client = google.accounts.oauth2.initTokenClient({
-        client_id: localStorage.getItem('liftlog_gcp_client_id') || '',
-        scope: 'https://www.googleapis.com/auth/drive.file',
-        callback: (resp) => {
-          if (resp.error) reject(new Error(resp.error));
-          else resolve(resp.access_token);
-        }
-      });
-      client.requestAccessToken({ prompt: '' });
+// ---- OAuth token handling ----
+// One token client is reused for the whole page session (rather than recreated per call) so
+// Google Identity Services can silently refresh instead of popping a consent window every time.
+let __driveTokenClient = null;
+let __driveAccessToken = null;
+let __driveTokenExpiry = 0;
+
+function resetDriveAuth() {
+  __driveTokenClient = null;
+  __driveAccessToken = null;
+  __driveTokenExpiry = 0;
+  setSyncStatus('Signed out — next sync will ask you to sign in again.', 'ok');
+}
+
+function waitForGoogleIdentity(timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    (function poll() {
+      if (window.google?.accounts?.oauth2) { resolve(); return; }
+      if (Date.now() - start > timeoutMs) { reject(new Error('Google sign-in script failed to load — check your connection and try again.')); return; }
+      setTimeout(poll, 150);
+    })();
+  });
+}
+
+async function ensureTokenClient() {
+  await waitForGoogleIdentity(4000);
+  const clientId = localStorage.getItem('liftlog_gcp_client_id') || '';
+  if (!clientId) throw new Error('No Google Client ID set — paste yours above first (see setup steps).');
+  if (!__driveTokenClient || __driveTokenClient.__clientId !== clientId) {
+    __driveTokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      callback: () => {} // overridden per-request in getAccessToken
     });
+    __driveTokenClient.__clientId = clientId;
   }
-  throw new Error('Google sign-in not available. See setup instructions in the sync section.');
+  return __driveTokenClient;
+}
+
+async function getAccessToken(forceConsent) {
+  const now = Date.now();
+  if (!forceConsent && __driveAccessToken && now < __driveTokenExpiry - 30000) {
+    return __driveAccessToken;
+  }
+  const client = await ensureTokenClient();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) { settled = true; reject(new Error('Sign-in timed out or was cancelled.')); }
+    }, 60000);
+    client.callback = (resp) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (resp.error) { reject(new Error(resp.error)); return; }
+      __driveAccessToken = resp.access_token;
+      __driveTokenExpiry = now + (resp.expires_in ? resp.expires_in * 1000 : 3500 * 1000);
+      resolve(__driveAccessToken);
+    };
+    try {
+      client.requestAccessToken(forceConsent ? { prompt: 'consent' } : {});
+    } catch(e) {
+      settled = true;
+      clearTimeout(timer);
+      reject(e);
+    }
+  });
 }
 
 async function pushToDrive() {
@@ -4714,6 +4867,7 @@ async function pushToDrive() {
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'workoutlog-sync.json', mimeType: 'application/json' })
       }).then(r => r.json());
+      if (!meta.id) throw new Error(meta.error?.message || 'Could not create sync file in Drive.');
       fileId = meta.id;
       saveDriveSyncFileId(fileId);
       const el = document.getElementById('sync-file-id');
@@ -4721,11 +4875,12 @@ async function pushToDrive() {
     }
 
     // Upload content
-    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+    const uploadResp = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
       method: 'PATCH',
       headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
       body: payload
     });
+    if (!uploadResp.ok) throw new Error('Upload failed (status ' + uploadResp.status + ')');
 
     setSyncStatus('Synced to Drive ✓', 'ok');
     showToast('Synced to Drive!');
@@ -4740,6 +4895,7 @@ async function pullFromDrive() {
     const token = await getAccessToken();
     const fileId = getDriveSyncFileId() || document.getElementById('sync-file-id')?.value.trim();
     if (!fileId) { setSyncStatus('No sync file ID set. Push first to create one.', 'err'); return; }
+    saveDriveSyncFileId(fileId);
 
     const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
       headers: { 'Authorization': 'Bearer ' + token }
@@ -4748,12 +4904,11 @@ async function pullFromDrive() {
     const raw = await resp.text();
     applySyncPayload(raw);
 
-    // Refresh all UI
-    WORKOUT_PROGS = buildWorkoutProgs();
-    WORKOUT_A_PROG = WORKOUT_PROGS.a;
-    WORKOUT_B_PROG = WORKOUT_PROGS.b;
+    // Refresh all UI/derived state that depends on the data just pulled in
+    initWorkoutProgs();
     document.getElementById('log-phase-label').textContent = getPhaseLabel();
     renderDailyAddons();
+    renderWorkoutLists();
     setSyncStatus('Pulled from Drive ✓', 'ok');
     showToast('Data loaded from Drive!');
   } catch(e) {
@@ -4791,29 +4946,92 @@ function initSyncBar() {
   if (lastEl && last) lastEl.textContent = 'Last sync: ' + last;
 }
 
-// Auto-push to Drive after saving a workout (if connected)
+// Auto-push to Drive after saving/editing/deleting a workout (if connected)
 function autoSyncAfterSave() {
-  if (getDriveSyncFileId()) {
-    pushToDrive().catch(() => {}); // silent fail on auto-sync
+  if (getDriveSyncFileId() && localStorage.getItem('liftlog_gcp_client_id')) {
+    pushToDrive().catch(() => {}); // silent fail on auto-sync — the manual buttons show real errors
   }
 }
 
-// Seed default start date if not set
-if (!localStorage.getItem('liftlog_start_date')) {
-  saveProgramStartDate('2026-04-27');
+// Attempts a token refresh with NO user interface at all (prompt:'none'). This either succeeds
+// silently (the browser still has an active Google session that previously granted access) or
+// resolves to null — it must never trigger a visible popup, since this runs automatically on
+// page load with no user gesture behind it (a real consent popup would be blocked anyway).
+function trySilentAccessToken() {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (val) => { if (!settled) { settled = true; resolve(val); } };
+    setTimeout(() => finish(null), 6000); // never let a silent check hang the app open
+
+    if (!window.google?.accounts?.oauth2) { finish(null); return; }
+    const clientId = localStorage.getItem('liftlog_gcp_client_id') || '';
+    if (!clientId) { finish(null); return; }
+    try {
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/drive.file',
+        callback: (resp) => {
+          if (resp && resp.access_token) {
+            __driveAccessToken = resp.access_token;
+            __driveTokenExpiry = Date.now() + (resp.expires_in ? resp.expires_in * 1000 : 3500 * 1000);
+            finish(resp.access_token);
+          } else {
+            finish(null);
+          }
+        }
+      });
+      client.requestAccessToken({ prompt: 'none' });
+    } catch(e) {
+      finish(null);
+    }
+  });
 }
 
-// Initialize workout progressions now that GOALS is defined
-initWorkoutProgs();
+// Runs once on app startup, before the first render, so a fresh pull can never clobber
+// something the user already started typing. If a device has never connected to Drive,
+// or a silent refresh isn't possible (no cached Google session), this is a fast no-op —
+// it never shows a sign-in popup on its own.
+async function autoPullOnLoad() {
+  const fileId = getDriveSyncFileId();
+  const clientId = localStorage.getItem('liftlog_gcp_client_id');
+  if (!fileId || !clientId) return;
 
-// Now safe to set phase label (buildRunPhases needs GOALS)
-document.getElementById('log-phase-label').textContent = getPhaseLabel();
+  const token = await trySilentAccessToken();
+  if (!token) return; // nothing we can do without a visible popup — leave local data as-is
 
-// Initialize sync bar
-initSyncBar();
+  try {
+    const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!resp.ok) return;
+    const raw = await resp.text();
+    applySyncPayload(raw);
+  } catch(e) {
+    // Background convenience only — a failure here just means we start from local data
+  }
+}
 
-// Auto-load today's workout type based on schedule
-autoLoadTodayWorkout();
+// Seed default start date if not set, then bring in any Drive data before the first render
+// so a background sync can never overwrite something the user has already started typing.
+(async function initAppStartup() {
+  await autoPullOnLoad();
+
+  if (!localStorage.getItem('liftlog_start_date')) {
+    saveProgramStartDate('2026-04-27');
+  }
+
+  // Initialize workout progressions now that GOALS is defined
+  initWorkoutProgs();
+
+  // Now safe to set phase label (buildRunPhases needs GOALS)
+  document.getElementById('log-phase-label').textContent = getPhaseLabel();
+
+  // Initialize sync bar
+  initSyncBar();
+
+  // Auto-load today's workout type based on schedule
+  autoLoadTodayWorkout();
+})();
 
 // ============================================================
 // SWIM MODULE
@@ -5030,6 +5248,7 @@ function getSwimConfig() {
 
 function saveSwimConfig(cfg) {
   localStorage.setItem(SWIM_CFG_KEY, JSON.stringify(cfg));
+  autoSyncAfterSave();
 }
 
 // ─── Program page: swim config UI ────────────────────────────
