@@ -338,9 +338,8 @@
     .log-header > div:last-child button { flex: 1 1 auto; min-width: 100px; padding: 10px 8px; font-size: 12px; }
     .date-display { font-size: 22px; }
 
-    /* Workout type chips: scrollable row */
-    .workout-type-row { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; padding-bottom: 4px; }
-    .workout-type-row::-webkit-scrollbar { display: none; }
+    /* Workout type chips: wrap so every option is visible, no hidden horizontal scroll */
+    .workout-type-row { flex-wrap: wrap; }
     .type-chip { flex-shrink: 0; padding: 8px 14px; font-size: 12px; }
 
     /* Exercise cards */
@@ -367,8 +366,15 @@
     .sets-table .set-prescribed { min-width: unset; }
     .sets-table td.no-print { margin-left: auto; }
 
-    /* Run fields: 2 columns */
-    .run-fields { grid-template-columns: 1fr 1fr; }
+    /* Run/swim fields: a multi-column grid of inputs (including a <select>) can force itself
+       wider than the screen, since form controls don't shrink below their own content size by
+       default in a grid track — going to one full-width column per field sidesteps that
+       entirely instead of fighting it column by column. !important because a couple of these
+       grids set their own column count inline. */
+    .run-fields { grid-template-columns: 1fr !important; }
+    .field-group, .field-input { min-width: 0; }
+    .field-input { width: 100%; }
+    .run-card { padding: 14px 12px; }
 
     /* Bigger touch targets for add-set button */
     .add-set-btn { padding: 10px 16px; font-size: 13px; width: 100%; text-align: center; }
